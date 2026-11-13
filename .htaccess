@@ -1,0 +1,67 @@
+# Canonical host: https://dubrovskayamaria.ru
+# www and cleartext HTTP go to the apex HTTPS URL in one hop.
+# A missing trailing slash is added in that same hop, except for files
+# (a path with an extension, or a real file such as /opengraph-image).
+# Beget terminates TLS on nginx. Apache often sees %{HTTPS} off while the
+# visitor is already on HTTPS, so also trust X-Forwarded-Proto.
+# In the Beget panel, mirror (alias) www onto this same public_html.
+# This file cannot change DNS.
+
+<IfModule mod_rewrite.c>
+RewriteEngine On
+
+# /blog and /blog/ go home with 302, including http and www, in one hop.
+RewriteRule ^blog/?$ https://dubrovskayamaria.ru/ [R=302,L]
+
+# Extensionless paths (and not an existing file) get a trailing slash
+# on the canonical host. This folds http and www into the same 301.
+RewriteCond %{REQUEST_URI} !/$
+RewriteCond %{REQUEST_URI} !\.[A-Za-z0-9]{1,10}$
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^(.+)$ https://dubrovskayamaria.ru/$1/ [R=301,L]
+
+# Not HTTPS according to Apache and not HTTPS according to the proxy.
+RewriteCond %{HTTPS} !=on
+RewriteCond %{HTTP:X-Forwarded-Proto} !https [NC]
+RewriteRule ^ https://dubrovskayamaria.ru%{REQUEST_URI} [R=301,L]
+
+# www (already HTTPS, or http if the rule above did not run) -> apex HTTPS.
+RewriteCond %{HTTP_HOST} ^www\.dubrovskayamaria\.ru$ [NC]
+RewriteRule ^ https://dubrovskayamaria.ru%{REQUEST_URI} [R=301,L]
+
+# BEGIN WordPress protection
+# Keep wp-admin, wp-includes, wp-content, and wp-config.php on disk.
+# Block include-only PHP and the files attackers request directly.
+RewriteRule ^wp-admin/includes/ - [F,L]
+RewriteRule !^wp-includes/ - [S=3]
+RewriteRule ^wp-includes/[^/]+\.php$ - [F,L]
+RewriteRule ^wp-includes/js/tinymce/langs/.+\.php - [F,L]
+RewriteRule ^wp-includes/theme-compat/ - [F,L]
+RewriteRule ^wp-content/uploads/.+\.(?i:php|phtml|php5|phar)$ - [F,L]
+# END WordPress protection
+</IfModule>
+
+# BEGIN WordPress protection
+<FilesMatch "(?i)^(wp-config\.php|xmlrpc\.php)$">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
+</FilesMatch>
+# END WordPress protection
+
+<IfModule mod_headers.c>
+  # Always set: behind Beget, %{HTTPS} is often off, so an env=HTTPS
+  # guard would drop HSTS on the response nginx serves over TLS.
+  # Browsers ignore HSTS on cleartext responses.
+  Header always set Strict-Transport-Security "max-age=31536000"
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "SAMEORIGIN"
+  # No Content-Security-Policy: Next static export ships inline scripts
+  # without a nonce. A CSP that allows them is too loose to be useful,
+  # and a strict one would break /_next, fonts, and page scripts.
+  # Telegram links are ordinary navigations and do not need a CSP entry.
+</IfModule>

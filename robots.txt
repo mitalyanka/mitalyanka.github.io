@@ -1,0 +1,6 @@
+User-Agent: *
+Allow: /
+Disallow: /blog
+
+Host: https://dubrovskayamaria.ru
+Sitemap: https://dubrovskayamaria.ru/sitemap.xml
